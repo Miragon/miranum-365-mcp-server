@@ -30,3 +30,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.npm_token }}
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Push Docker image to fly.io registry
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_APP: ms-365-mcp-server
+          SHA: ${{ github.sha }}
+        run: |
+          flyctl auth docker
+          docker build \
+            -t "registry.fly.io/$FLY_APP:$SHA" \
+            -t "registry.fly.io/$FLY_APP:latest" \
+            .
+          docker push "registry.fly.io/$FLY_APP:$SHA"
+          docker push "registry.fly.io/$FLY_APP:latest"
