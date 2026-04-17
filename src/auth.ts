@@ -83,6 +83,23 @@ function wrapCache(data: string): string {
   return JSON.stringify({ _cacheEnvelope: true, data, savedAt: Date.now() });
 }
 
+/**
+ * Decodes the `exp` claim (seconds since epoch) from a JWT access token and
+ * returns it as a millisecond timestamp. Returns null if the token is not a
+ * JWT or has no exp claim — in that case the caller treats the token as
+ * having unknown lifetime and does not enforce expiry locally.
+ */
+function readJwtExpiry(token: string): number | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 function unwrapCache(raw: string): { data: string; savedAt?: number } {
   try {
     const parsed = JSON.parse(raw);
@@ -195,7 +212,9 @@ function buildScopesFromEndpoints(
     }
   });
 
-  const scopes = Array.from(scopesSet);
+  // Always include offline_access so Azure AD issues a refresh token, and
+  // openid so MSAL can identify the account across silent token acquisitions.
+  const scopes = ['offline_access', 'openid', ...Array.from(scopesSet)];
   if (enabledToolsPattern) {
     logger.info(`Built ${scopes.length} scopes for filtered tools: ${scopes.join(', ')}`);
   }
@@ -219,6 +238,7 @@ class AuthManager {
   private accessToken: string | null;
   private tokenExpiry: number | null;
   private oauthToken: string | null;
+  private oauthTokenExpiry: number | null;
   private isOAuthMode: boolean;
   private selectedAccountId: string | null;
   private useInteractiveAuth: boolean;
@@ -235,6 +255,7 @@ class AuthManager {
 
     const oauthTokenFromEnv = process.env.MS365_MCP_OAUTH_TOKEN;
     this.oauthToken = oauthTokenFromEnv ?? null;
+    this.oauthTokenExpiry = oauthTokenFromEnv ? readJwtExpiry(oauthTokenFromEnv) : null;
     this.isOAuthMode = oauthTokenFromEnv != null;
   }
 
@@ -365,11 +386,19 @@ class AuthManager {
 
   async setOAuthToken(token: string): Promise<void> {
     this.oauthToken = token;
+    this.oauthTokenExpiry = readJwtExpiry(token);
     this.isOAuthMode = true;
   }
 
   async getToken(forceRefresh = false): Promise<string | null> {
     if (this.isOAuthMode && this.oauthToken) {
+      // A 30-second skew guards against clock drift and mid-flight expiry.
+      if (this.oauthTokenExpiry && this.oauthTokenExpiry - 30_000 <= Date.now()) {
+        logger.info('OAuth token has expired — clearing so the client re-authenticates');
+        this.oauthToken = null;
+        this.oauthTokenExpiry = null;
+        return null;
+      }
       return this.oauthToken;
     }
 
