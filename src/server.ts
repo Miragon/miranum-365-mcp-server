@@ -353,10 +353,20 @@ class MicrosoftGraphServer {
         // Use our Microsoft app's client_id
         microsoftAuthUrl.searchParams.set('client_id', clientId);
 
-        // Ensure we have the minimal required scopes if none provided
-        if (!microsoftAuthUrl.searchParams.get('scope')) {
-          microsoftAuthUrl.searchParams.set('scope', 'User.Read Files.Read Mail.Read');
+        // Always force offline_access + openid so Azure AD issues a refresh_token
+        // and a stable account id, regardless of what the MCP client requested.
+        // Without offline_access the access_token expires after ~1h with no way
+        // to renew silently — causing the "token invalid after a short time"
+        // symptom this route is the single point for.
+        const existingScope = microsoftAuthUrl.searchParams.get('scope');
+        const scopeSet = new Set(existingScope ? existingScope.split(/\s+/).filter(Boolean) : []);
+        scopeSet.add('offline_access');
+        scopeSet.add('openid');
+        if (scopeSet.size === 2) {
+          // No scopes came from the client — fall back to a useful default.
+          for (const s of ['User.Read', 'Files.Read', 'Mail.Read']) scopeSet.add(s);
         }
+        microsoftAuthUrl.searchParams.set('scope', [...scopeSet].join(' '));
 
         // Redirect to Microsoft's authorization page
         res.redirect(microsoftAuthUrl.toString());
