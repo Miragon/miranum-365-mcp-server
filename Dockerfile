@@ -22,4 +22,4 @@ RUN npm i --ignore-scripts --omit=dev
 EXPOSE 3000
 
 ENTRYPOINT ["node", "dist/index.js"]
-CMD ["--http"]
+CMD ["--http", "--preset", "mail,calendar"]
