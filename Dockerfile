@@ -19,4 +19,7 @@ COPY --from=builder /app/package*.json ./
 ENV NODE_ENV=production
 RUN npm i --ignore-scripts --omit=dev
 
+EXPOSE 3000
+
 ENTRYPOINT ["node", "dist/index.js"]
+CMD ["--http"]
