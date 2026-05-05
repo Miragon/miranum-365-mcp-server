@@ -34,16 +34,6 @@ jobs:
       - name: Set up flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Ensure fly.io app exists
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          FLY_APP: ms-365-mcp-server
-          FLY_ORG: miranum
-        run: |
-          if ! flyctl status -a "$FLY_APP" >/dev/null 2>&1; then
-            flyctl apps create "$FLY_APP" --org "$FLY_ORG"
-          fi
-
       - name: Push Docker image to fly.io registry
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
